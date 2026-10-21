@@ -43,6 +43,13 @@ class PostCard extends StatelessWidget {
     return spans;
   }
 
+  /// The post on its live site (4chan or Endchan), or our own permanent copy.
+  String get _liveUrl => post.url.isNotEmpty
+      ? post.url
+      : post.isEndchan
+          ? Config.endchanThread(post.thread, post.no)
+          : '${Config.baseUrl}/p/${post.no}';
+
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: post.com));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -54,6 +61,19 @@ class PostCard extends StatelessWidget {
   /// your browser) drops it straight into the box. Without the userscript the
   /// text is still on your clipboard to paste.
   void _openReply(BuildContext context, {String? text}) {
+    if (post.isEndchan) {
+      // The in-app browser only goes to 4chan, so Endchan's own reply box
+      // (#q<no> quotes the post) opens in the phone's browser. Saved text is
+      // already on the clipboard to paste.
+      if (text != null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Reply copied — paste it into Endchan\'s reply box'),
+            duration: Duration(seconds: 2)));
+      }
+      launchUrl(Uri.parse(Config.endchanReply(post.thread, post.no)),
+          mode: LaunchMode.externalApplication);
+      return;
+    }
     // Opens 4chan's real reply box inside the app, with [text] already typed in.
     // You press Post yourself — the app never submits for you.
     final board = post.board.isEmpty ? 'b' : post.board;
@@ -143,7 +163,7 @@ class PostCard extends StatelessWidget {
                 children: [
                   Text(post.name,
                       style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  Text('${post.ago} · No.${post.no}',
+                  Text('${post.ago} · No.${post.no}${post.isEndchan ? ' · Endchan' : ''}',
                       style: TextStyle(fontSize: 11, color: muted)),
                 ],
               ),
@@ -236,7 +256,7 @@ class PostCard extends StatelessWidget {
               if (!archiveMode)
                 IconButton(
                   // Full permanent thread on thebarchive.com (survives deletion).
-                  tooltip: 'Permanent archive',
+                  tooltip: post.isEndchan ? 'Endchan thread' : 'Permanent archive',
                   visualDensity: VisualDensity.compact,
                   color: muted,
                   iconSize: 18,
@@ -249,14 +269,12 @@ class PostCard extends StatelessWidget {
                 IconButton(
                   // In the Archive the post is usually gone from 4chan, so the
                   // live thread becomes the secondary link instead.
-                  tooltip: 'Live 4chan thread',
+                  tooltip: post.isEndchan ? 'Live Endchan thread' : 'Live 4chan thread',
                   visualDensity: VisualDensity.compact,
                   color: muted,
                   iconSize: 18,
                   onPressed: () => launchUrl(
-                      Uri.parse(post.url.isNotEmpty
-                          ? post.url
-                          : '${Config.baseUrl}/p/${post.no}'),
+                      Uri.parse(_liveUrl),
                       mode: LaunchMode.externalApplication),
                   icon: const Icon(Icons.open_in_new),
                 ),
@@ -287,9 +305,7 @@ class PostCard extends StatelessWidget {
                   onPressed: () => launchUrl(
                       Uri.parse(archiveMode
                           ? Config.archiveThread(post.thread, post.no, board: post.board)
-                          : (post.url.isNotEmpty
-                              ? post.url
-                              : '${Config.baseUrl}/p/${post.no}')),
+                          : _liveUrl),
                       mode: LaunchMode.externalApplication),
                   icon: Icon(
                       archiveMode ? Icons.archive_outlined : Icons.open_in_new,

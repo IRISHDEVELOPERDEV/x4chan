@@ -47,8 +47,19 @@ Flutter version is pinned in the workflow (currently 3.47.7).
 Gradle plugin is applied in the committed Gradle files. The server sends the
 pushes. Android 13+ asks for the notification permission on first launch.
 
+## Endchan
+While 4chan is read-only the server also follows the Endchan /b/ OTK general.
+Its posts come back with `board: "endchan"`:
+- The Feed, Media and Archive ask for `sort=time` (paging with `before_ts` +
+  `before_no`), so Endchan posts sit among the 4chan ones by post time.
+- Endchan cards are marked "Endchan"; Open, Reply and the archive button go to
+  endchan.net (Reply opens Endchan in your browser), thumbnails come through
+  the server's `/thumb` proxy.
+- The thread button at the top of the Feed shows every post of the current
+  Endchan OTK thread (`/thread?thread=<id>`), not just EE/Emily matches.
+
 ## Notes
-- Feed images/videos load from 4chan's CDN, so media from threads that have
-  since been deleted won't display (the text and links remain).
+- Feed images/videos load from 4chan's (or Endchan's) servers, so media from
+  threads that have since been deleted won't display (the text and links remain).
 - The in-app Reply browser only navigates within 4chan (4chan.org,
   4channel.org, 4cdn.org); other links open in your normal browser.
