@@ -1,7 +1,7 @@
 name: fourchan_monitor
 description: Companion app for the 4chan gossip monitor (EE/Emily).
 publish_to: 'none'
-version: 1.1.0+1   # build number is set from the CI run number
+version: 1.1.1+1   # build number is set from the CI run number
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

@@ -5,6 +5,7 @@ import 'api.dart';
 import 'post_card.dart';
 import 'retry_button.dart';
 import 'reply_browser.dart';
+import 'thread_screen.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -121,9 +122,15 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
     }
   }
 
-  int get _highestNo => _pending.isNotEmpty
-      ? _pending.first.no
-      : (_posts.isNotEmpty ? _posts.first.no : 0);
+  /// Newest post we hold (the feed is ordered by post time, not number, so
+  /// Endchan's much smaller post numbers can't be compared with 4chan's).
+  Post? get _newest => _pending.isNotEmpty
+      ? _pending.first
+      : (_posts.isNotEmpty ? _posts.first : null);
+
+  /// Posts already on screen or held back, so a poll never adds one twice.
+  Set<String> get _haveKeys =>
+      {for (final p in _posts) p.key, for (final p in _pending) p.key};
 
   /// Fetch the newest posts and slot any we don't have yet in.
   /// Guarded ONLY by its own flag — pagination can never block it.
@@ -143,7 +150,11 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       final latest =
           await Api.feed(limit: 30, keywordsOnly: Config.keywordsOnly);
       if (!mounted || gen != _gen) return true;   // list was reloaded meanwhile
-      final fresh = latest.where((p) => p.no > _highestNo).toList();
+      final newest = _newest;
+      final have = _haveKeys;
+      final fresh = latest
+          .where((p) => !have.contains(p.key) && (newest == null || p.isNewerThan(newest)))
+          .toList();
       if (fresh.isNotEmpty && mounted) {
         final atTop = !_scroll.hasClients || _scroll.offset < 300;
         setState(() {
@@ -189,13 +200,14 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       }
     });
     try {
-      final before = (refresh || _posts.isEmpty) ? null : _posts.last.no;
+      final before = (refresh || _posts.isEmpty) ? null : _posts.last;
       final batch =
           await Api.feed(before: before, keywordsOnly: Config.keywordsOnly);
       if (!mounted || gen != _gen) return;   // superseded or screen gone
       setState(() {
         if (refresh) _posts.clear();
-        _posts.addAll(batch);
+        final have = _haveKeys;
+        _posts.addAll(batch.where((p) => !have.contains(p.key)));
         if (batch.isEmpty) _end = true;
       });
     } catch (e) {
@@ -272,6 +284,13 @@ class _FeedScreenState extends State<FeedScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Feed'),
         actions: [
+          IconButton(
+            // Every post of the Endchan OTK general, not just EE/Emily matches.
+            tooltip: 'Endchan thread',
+            icon: const Icon(Icons.forum_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ThreadScreen.endchan())),
+          ),
           IconButton(
             tooltip: 'Browse 4chan',
             icon: const Icon(Icons.public),

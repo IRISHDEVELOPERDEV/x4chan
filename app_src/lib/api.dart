@@ -85,12 +85,27 @@ class Config {
   }
 
   // External permanent /b/ archives (open in browser — they block in-app fetching).
+  // Endchan posts have no thebarchive copy, so they link to Endchan itself.
   static String archiveThread(int thread, int no, {String board = 'b'}) {
+    if (board == endchanBoard) return endchanThread(thread, no);
     final b = board.isEmpty ? 'b' : board;   // /trash/ is watched too now
     return thread > 0
         ? 'https://thebarchive.com/$b/thread/$thread/#$no'
         : 'https://thebarchive.com/$b/post/$no/';
   }
+  /// The server tags posts from the Endchan /b/ OTK general with this board.
+  static const endchanBoard = 'endchan';
+
+  /// Endchan thread page, jumping to post [no] (same link as the website).
+  static String endchanThread(int thread, int no) => thread > 0
+      ? 'https://endchan.net/b/res/$thread.html#$no'
+      : 'https://endchan.net/b/';
+
+  /// Endchan thread page with post [no] quoted in its reply box (#q<no>).
+  static String endchanReply(int thread, int no) => thread > 0
+      ? 'https://endchan.net/b/res/$thread.html#q$no'
+      : 'https://endchan.net/b/';
+
   static String thebarchiveSearch(String q) =>
       'https://thebarchive.com/b/search/text/${Uri.encodeComponent(q.trim())}/';
   static String archivedMoeSearch(String q) =>
@@ -125,6 +140,16 @@ class Post {
         url = asStr(j['url']),
         media = j['media'] is String ? j['media'] as String : null;
 
+  /// From the Endchan /b/ OTK general rather than 4chan.
+  bool get isEndchan => board == Config.endchanBoard;
+
+  /// Same post from another source (4chan and Endchan numbers can overlap).
+  String get key => '$board/$no';
+
+  /// True if this post is newer than [o] in the time-ordered feed (post time,
+  /// ties by number) -- the same order the server's sort=time uses.
+  bool isNewerThan(Post o) => ts != o.ts ? ts > o.ts : no > o.no;
+
   String get ago {
     if (ts == 0) return now;
     final d = DateTime.now()
@@ -142,9 +167,18 @@ class Post {
   /// other image in the app they'd otherwise never touch our fast, warm,
   /// server-side cache -- each device would cold-connect to 4chan for every
   /// tile, every time, which is what made the gallery feel slow.
+  /// Endchan's thumbnails sit beside the file as "/.media/t_<name>" (no
+  /// extension) and go through the same /thumb proxy.
   String? get thumb {
     final m = media;
     if (m == null || m.isEmpty) return null;
+    if (isEndchan) {
+      final cut = m.lastIndexOf('/') + 1;
+      final file = m.substring(cut);
+      final d = file.lastIndexOf('.');
+      final t = '${m.substring(0, cut)}t_${d > 0 ? file.substring(0, d) : file}';
+      return '${Config.baseUrl}/thumb?u=${Uri.encodeQueryComponent(t)}';
+    }
     final dot = m.lastIndexOf('.');
     final direct = dot <= 0 ? m : '${m.substring(0, dot)}s.jpg';
     return '${Config.baseUrl}/thumb?u=${Uri.encodeQueryComponent(direct)}';
@@ -335,13 +369,25 @@ class Api {
   static List<Post> _posts(Map<String, dynamic> j) =>
       _maps(j['posts']).map(Post.fromJson).toList();
 
+  /// Paging cursor for the time-ordered feed: everything older than [last].
+  /// before_ts/before_no is the sort=time cursor; the plain before=<no> rides
+  /// along so paging still works if the server ever answers in number order.
+  static Map<String, String> beforeParams(Post? last) => last == null
+      ? const {}
+      : {
+          'before_ts': '${last.ts}',
+          'before_no': '${last.no}',
+          'before': '${last.no}',
+        };
+
+  /// Newest first, ordered by post time so 4chan and Endchan posts interleave.
+  /// Pass the oldest post you already have as [before] to get the next page.
   static Future<List<Post>> feed(
-      {int? before,
+      {Post? before,
       int limit = 50,
       bool keywordsOnly = false,
       bool mediaOnly = false}) async {
-    final q = <String, String>{'limit': '$limit'};
-    if (before != null) q['before'] = '$before';
+    final q = <String, String>{'limit': '$limit', 'sort': 'time', ...beforeParams(before)};
     if (keywordsOnly) q['keywords'] = '1';   // full EE/Emily stream, not client-filtered
     if (mediaOnly) q['media'] = '1';         // gallery: only posts with a file
     return _posts(await _send('/feed', query: q));
@@ -352,6 +398,27 @@ class Api {
   /// since deleted (served from our own DB, not fetched live from 4chan).
   static Future<List<Post>> thread(int postNo) async =>
       _posts(await _send('/thread', query: {'no': '$postNo'}));
+
+  /// Every archived post of thread [threadId] (e.g. the Endchan OTK general),
+  /// oldest first, keyword match or not.
+  static Future<List<Post>> threadById(int threadId) async =>
+      _posts(await _send('/thread', query: {'thread': '$threadId'}));
+
+  /// The Endchan OTK thread currently being followed: the thread of the
+  /// newest Endchan post the server has. Looks through the newest few pages of
+  /// the time-ordered feed; returns null if no Endchan post turns up.
+  static Future<int?> currentEndchanThread({int pages = 5}) async {
+    Post? last;
+    for (var i = 0; i < pages; i++) {
+      final batch = await feed(before: last, limit: 200);
+      for (final p in batch) {
+        if (p.isEndchan && p.thread > 0) return p.thread;
+      }
+      if (batch.isEmpty) break;
+      last = batch.last;
+    }
+    return null;
+  }
 
   /// Mentions per day/hour and EE-vs-Emily split, over the last [days] days.
   static Future<Stats> stats({int days = 14}) async =>
@@ -368,6 +435,7 @@ class Api {
     final params = <String, String>{
       'limit': '$limit',
       'order': oldestFirst ? 'asc' : 'desc',
+      'sort': 'time',   // by post time, so Endchan results interleave with 4chan
     };
     if (q.isNotEmpty) params['q'] = q;
     if (year != null) params['year'] = '$year';

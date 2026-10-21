@@ -66,7 +66,7 @@ class _MediaScreenState extends State<MediaScreen> {
       }
     });
     try {
-      final before = (refresh || _posts.isEmpty) ? null : _posts.last.no;
+      final before = (refresh || _posts.isEmpty) ? null : _posts.last;
       final batch = await Api.feed(
         before: before,
         limit: 60,
@@ -76,7 +76,8 @@ class _MediaScreenState extends State<MediaScreen> {
       if (!mounted || gen != _gen) return;
       setState(() {
         if (refresh) _posts.clear();
-        _posts.addAll(batch);
+        final have = {for (final p in _posts) p.key};
+        _posts.addAll(batch.where((p) => !have.contains(p.key)));
         if (batch.isEmpty) _end = true;
       });
     } catch (e) {

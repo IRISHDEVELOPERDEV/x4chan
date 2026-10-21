@@ -29,6 +29,65 @@ void main() {
     });
   });
 
+  group('Endchan posts', () {
+    final ec = Post.fromJson({
+      'no': 80863,
+      'board': 'endchan',
+      'thread': 75321,
+      'ts': 1792610580,
+      'ext': '.jpg',
+      'url': 'https://endchan.net/b/res/75321.html#80863',
+      'media': 'https://endchan.net/.media/eeb95db79133841e06d1fa9c9cf1f473-imagejpeg.jpg',
+    });
+    final fc = Post.fromJson({
+      'no': 955000000,
+      'board': 'b',
+      'thread': 954990000,
+      'ts': 1792610000,
+      'ext': '.jpg',
+      'media': 'https://i.4cdn.org/b/1792610000123.jpg',
+    });
+
+    test('recognised and keyed by board', () {
+      expect(ec.isEndchan, isTrue);
+      expect(fc.isEndchan, isFalse);
+      expect(ec.key, 'endchan/80863');
+    });
+
+    test('thumbnail goes through /thumb with Endchan t_ name', () {
+      const ecThumb =
+          'https://endchan.net/.media/t_eeb95db79133841e06d1fa9c9cf1f473-imagejpeg';
+      const fcThumb = 'https://i.4cdn.org/b/1792610000123s.jpg';
+      expect(ec.thumb,
+          '${Config.baseUrl}/thumb?u=${Uri.encodeQueryComponent(ecThumb)}');
+      expect(fc.thumb,
+          '${Config.baseUrl}/thumb?u=${Uri.encodeQueryComponent(fcThumb)}');
+    });
+
+    test('ordered by time, not post number', () {
+      expect(ec.isNewerThan(fc), isTrue);   // later post, much smaller number
+      expect(fc.isNewerThan(ec), isFalse);
+    });
+
+    test('links go to Endchan, 4chan links unchanged', () {
+      expect(Config.archiveThread(75321, 80863, board: 'endchan'),
+          'https://endchan.net/b/res/75321.html#80863');
+      expect(Config.endchanReply(75321, 80863),
+          'https://endchan.net/b/res/75321.html#q80863');
+      expect(Config.archiveThread(954990000, 955000000, board: 'b'),
+          'https://thebarchive.com/b/thread/954990000/#955000000');
+    });
+
+    test('time cursor for paging', () {
+      expect(Api.beforeParams(null), isEmpty);
+      expect(Api.beforeParams(ec), {
+        'before_ts': '1792610580',
+        'before_no': '80863',
+        'before': '80863',
+      });
+    });
+  });
+
   test('auth errors carry the rebuild message', () {
     expect(const AuthException(401).toString(), contains('Token rejected'));
   });
